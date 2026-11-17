@@ -7,7 +7,12 @@ COPY src ./src
 RUN npm run build
 
 FROM node:22-alpine
-ENV NODE_ENV=production
+# The bad-deploy image is this same build with BROKEN=true baked in.
+ARG VERSION=dev
+ARG BROKEN=false
+ENV NODE_ENV=production \
+    VERSION=$VERSION \
+    BROKEN=$BROKEN
 WORKDIR /app
 COPY package.json ./
 COPY --from=build /app/dist ./dist
