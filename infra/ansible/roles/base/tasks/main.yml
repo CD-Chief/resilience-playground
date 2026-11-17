@@ -75,6 +75,23 @@
     mode: "0600"
   when: base_root_authorized_keys.stat.exists
 
+# Root login is switched off next, so make sure the admin user can log in first.
+# Without this, a server with no root keys would lock everyone out.
+- name: Check the admin user has authorized keys
+  ansible.builtin.stat:
+    path: "/home/{{ admin_user }}/.ssh/authorized_keys"
+  register: base_admin_authorized_keys
+
+- name: Refuse to disable root login without admin keys
+  ansible.builtin.assert:
+    that:
+      - base_admin_authorized_keys.stat.exists
+      - base_admin_authorized_keys.stat.size > 0
+    fail_msg: >-
+      /home/{{ admin_user }}/.ssh/authorized_keys is missing or empty, so disabling
+      root login would lock you out. Check the server was created with your SSH key.
+    quiet: true
+
 - name: Harden the SSH daemon
   ansible.builtin.copy:
     dest: /etc/ssh/sshd_config.d/10-hardening.conf
