@@ -1,0 +1,58 @@
+---
+- name: Create the manifests directory
+  ansible.builtin.file:
+    path: "{{ repo_k8s_dir }}"
+    state: directory
+    owner: "{{ admin_user }}"
+    group: "{{ admin_user }}"
+    mode: "0755"
+
+- name: Copy the k8s directory to the server
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../../k8s/"
+    dest: "{{ repo_k8s_dir }}/"
+    delete: true
+    recursive: true
+    checksum: true
+    owner: false
+    group: false
+  become: false
+
+- name: Apply the prod overlay
+  ansible.builtin.command: k3s kubectl apply -k {{ repo_k8s_dir }}/overlays/prod
+  register: deploy_prod_apply
+  changed_when: deploy_prod_apply.stdout_lines | select('search', ' (configured|created)$') | list | length > 0
+
+- name: Wait for the Deployments to roll out
+  ansible.builtin.command: k3s kubectl -n {{ item.namespace }} rollout status deployment/{{ item.name }} --timeout=180s
+  loop:
+    - { namespace: platform, name: controller }
+    - { namespace: platform, name: web }
+    - { namespace: sandbox, name: loadgen }
+    - { namespace: monitoring, name: prometheus }
+  loop_control:
+    label: "{{ item.namespace }}/{{ item.name }}"
+  changed_when: false
+
+- name: Wait for the target Rollout to be Healthy
+  ansible.builtin.command: >-
+    k3s kubectl -n sandbox wait rollout/target
+    --for=jsonpath={.status.phase}=Healthy --timeout=180s
+  changed_when: false
+
+# cert-manager creates the Certificate a moment after the Ingress appears.
+- name: Wait for the Certificate to exist
+  ansible.builtin.command: k3s kubectl -n platform get certificate playground-tls
+  register: deploy_certificate_exists
+  until: deploy_certificate_exists.rc == 0
+  retries: 30
+  delay: 5
+  changed_when: false
+
+- name: Wait for the Certificate to be Ready
+  ansible.builtin.command: k3s kubectl -n platform wait --for=condition=Ready certificate/playground-tls --timeout=300s
+  changed_when: false
+
+- name: Show the URL
+  ansible.builtin.debug:
+    msg: "Deployed. Open {{ public_url }}"
