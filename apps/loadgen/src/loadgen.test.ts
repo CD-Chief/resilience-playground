@@ -3,6 +3,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { describe, it } from 'node:test';
 import { startLoadgen, type TickStats } from './loadgen.js';
+import { createMetrics } from './metrics.js';
 
 function listen(server: Server): Promise<string> {
   return new Promise((resolve) => {
@@ -101,6 +102,25 @@ describe('loadgen', () => {
       assert.equal(last.errors.timeout, last.failed);
     } finally {
       await close(server);
+    }
+  });
+});
+
+describe('metrics', () => {
+  it('exposes outcome counts and latency in Prometheus format', async () => {
+    const metrics = createMetrics();
+    const url = await listen(metrics.server);
+    try {
+      metrics.record(true, 12);
+      metrics.record(true, 8);
+      metrics.record(false, 2000);
+      const text = await (await fetch(`${url}/metrics`)).text();
+      assert.ok(text.includes('loadgen_requests_total{result="ok"} 2'));
+      assert.ok(text.includes('loadgen_requests_total{result="failed"} 1'));
+      assert.ok(text.includes('loadgen_request_duration_seconds_count 3'));
+      assert.equal((await fetch(`${url}/nope`)).status, 404);
+    } finally {
+      await close(metrics.server);
     }
   });
 });

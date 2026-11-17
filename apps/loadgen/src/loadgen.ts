@@ -23,6 +23,8 @@ export interface Options {
   /** How often stats are reported. */
   tickMs?: number;
   onTick: (stats: TickStats) => void;
+  /** Called once for every finished request. */
+  onResult?: (ok: boolean, ms: number) => void;
 }
 
 interface Result {
@@ -86,12 +88,13 @@ function emptyTick() {
 }
 
 export function startLoadgen(options: Options): { stop: () => void } {
-  const { url, rate, timeoutMs, onTick, tickMs = 1000 } = options;
+  const { url, rate, timeoutMs, onTick, onResult, tickMs = 1000 } = options;
   let tick = emptyTick();
   let totalOk = 0;
   let totalFailed = 0;
 
   const record = (result: Result) => {
+    onResult?.(result.ok, result.ms);
     tick.sumMs += result.ms;
     tick.maxMs = Math.max(tick.maxMs, result.ms);
     if (result.ok) {

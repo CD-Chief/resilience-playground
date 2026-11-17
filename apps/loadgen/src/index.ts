@@ -1,4 +1,5 @@
 import { startLoadgen } from './loadgen.js';
+import { createMetrics } from './metrics.js';
 
 function log(level: 'info' | 'warn', msg: string, fields: Record<string, unknown> = {}): void {
   process.stdout.write(
@@ -23,12 +24,18 @@ if (!url.startsWith('http://')) {
 const rate = numberFromEnv('RATE', 10, 1, 200);
 const timeoutMs = numberFromEnv('TIMEOUT_MS', 2000, 100, 30000);
 
-log('info', 'starting', { url, rate, timeoutMs });
+const metricsPort = numberFromEnv('METRICS_PORT', 9100, 1, 65535);
+
+log('info', 'starting', { url, rate, timeoutMs, metricsPort });
+
+const metrics = createMetrics();
+metrics.server.listen(metricsPort);
 
 const loadgen = startLoadgen({
   url,
   rate,
   timeoutMs,
+  onResult: metrics.record,
   onTick: (stats) => log(stats.failed > 0 ? 'warn' : 'info', 'tick', { ...stats }),
 });
 
