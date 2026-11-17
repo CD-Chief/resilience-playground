@@ -1,0 +1,21 @@
+# Copy to terraform.tfvars (git-ignored) and fill in. Tokens do not go here:
+# export HCLOUD_TOKEN and CLOUDFLARE_API_TOKEN in your shell instead.
+
+# Cloudflare dashboard -> the domain -> Overview -> API section -> Zone ID.
+cloudflare_zone_id = "REPLACE_WITH_ZONE_ID"
+
+# domain      = "chiefosei.dev"
+# subdomain   = "lab"
+# server_name = "resilience-playground"
+
+# Check availability in the Hetzner console; "cpx22" is the alternative.
+# server_type = "cx23"
+# location    = "nbg1"
+# image       = "ubuntu-24.04"
+
+# Contents of your public key file, for example ~/.ssh/id_ed25519.pub.
+ssh_public_key = "ssh-ed25519 AAAA... you@example"
+
+# Your public IP as a /32. Find it with: curl -4 https://ifconfig.me
+# Add an IPv6 /128 as well if you connect over IPv6. 0.0.0.0/0 is rejected.
+admin_cidrs = ["203.0.113.7/32"]
