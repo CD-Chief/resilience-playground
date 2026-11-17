@@ -4,7 +4,7 @@ A fault-injection and self-healing lab on Kubernetes. You press a button, someth
 
 The point is the recovery, not the breakage. Every fault maps to a specific mechanism that heals it, and the page shows which one did and how long it took.
 
-**Status:** stage 2 is done: a local lab on your own machine with k3d, with Prometheus, live graphs and canary analysis. A public deployment comes later (see [Roadmap](#roadmap)).
+**Status:** stages 1 and 2 are done: a local lab on your own machine with k3d, with Prometheus, live graphs and canary analysis. Stage 3 is built: Terraform, Ansible, CI images and a production overlay for one Hetzner server. Going live needs your own Hetzner and Cloudflare accounts (see [Run it in production](#run-it-in-production) and [Roadmap](#roadmap)).
 
 ## What you can break
 
@@ -56,6 +56,12 @@ Useful to know:
 - **Another port:** `.\scripts\up.ps1 -Port 9000` or `PORT=9000 scripts/up.sh`. The port is fixed when the cluster is created, so run the down script first if you want to change it.
 - **After changing code:** run the up script again. It rebuilds the images and restarts the workloads on the existing cluster.
 - **Your other clusters are safe:** every `kubectl` call in the scripts names the `k3d-resilience-playground` context explicitly.
+
+## Run it in production
+
+The same lab can run on one Hetzner Cloud server with k3s, behind Cloudflare, at your own domain. Terraform creates the server, firewall and DNS records. Ansible hardens the server, installs k3s and deploys the app. Images are built by GitHub Actions into GHCR. It costs a few euros a month.
+
+The step-by-step runbook for PowerShell is in [docs/production.md](docs/production.md). It covers accounts and tokens, the first deploy, deploying a new version, kubectl through an SSH tunnel, tearing it down, and troubleshooting.
 
 ## Things to try
 
@@ -177,7 +183,13 @@ k8s/
   monitoring/    Prometheus
   sandbox/       target Rollout and Service, loadgen, analysis template
   platform/      controller, web, ingress
-scripts/         up and down, for PowerShell and bash
+  overlays/prod/ production overlay: image tags, ingress host, TLS issuer
+infra/
+  terraform/     Hetzner server, firewall and Cloudflare DNS records
+  ansible/       server hardening, k3s, add-ons and deploys (runs in Docker)
+.github/workflows/  builds the images into GHCR
+docs/            production runbook
+scripts/         local up and down, Terraform and Ansible wrappers, image tagging
 ```
 
 ## Troubleshooting
@@ -192,6 +204,6 @@ scripts/         up and down, for PowerShell and bash
 
 1. **Local MVP on k3d** (done)
 2. **Observability:** Prometheus, live graphs of request rate, success rate and latency, and canary analysis based on real error rates (done)
-3. **Production cluster:** k3s on a VPS, provisioned with Terraform and Ansible, with TLS
-4. **Delivery:** images built in GitHub Actions, deployed by Argo CD
-5. **Hardening and extras:** per-IP rate limits, bot protection, a dependency-loss scenario with a circuit breaker
+3. **Production cluster:** k3s on a VPS, provisioned with Terraform and Ansible, with TLS, images built by GitHub Actions and per-IP rate limits (built; going live needs your Hetzner and Cloudflare accounts)
+4. **Delivery:** deploys handed over to Argo CD
+5. **Hardening and extras:** bot protection, a dependency-loss scenario with a circuit breaker
