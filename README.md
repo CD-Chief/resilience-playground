@@ -4,7 +4,7 @@ A fault-injection and self-healing lab on Kubernetes. You press a button, someth
 
 The point is the recovery, not the breakage. Every fault maps to a specific mechanism that heals it, and the page shows which one did and how long it took.
 
-**Status:** stage 1, a local MVP that runs on your own machine with k3d. A public deployment comes later (see [Roadmap](#roadmap)).
+**Status:** stage 2 is done: a local lab on your own machine with k3d, with Prometheus, live graphs and canary analysis. A public deployment comes later (see [Roadmap](#roadmap)).
 
 ## What you can break
 
@@ -12,9 +12,10 @@ The point is the recovery, not the breakage. Every fault maps to a specific mech
 | --- | --- | --- | --- |
 | Crash a pod | One pod's process exits | The kubelet restarts the container; the other two pods keep serving | about 6s |
 | Fail readiness | One pod's readiness probe fails for 45s | The pod is removed from the Service endpoints and rejoins when the probe passes again | about 46s |
-| Bad deploy | A broken image is released as a canary | The canary never becomes ready, so it gets no traffic; Argo Rollouts aborts the release at its 30s progress deadline | about 37s |
+| Bad deploy | A broken image is released as a canary | The canary never becomes ready, so it gets no traffic. Readiness and the progress deadline catch it: Argo Rollouts aborts the release after 30s | about 37s |
+| Flaky deploy | A new version starts fine and passes its probes, but fails half of its requests | Canary analysis catches it by measuring errors. Argo Rollouts sends a third of traffic to one canary pod, asks Prometheus every 5s for the canary's 5xx rate, and aborts when it is above 5% twice | about 34s |
 
-A load generator sends 10 requests a second at the app the whole time, so you can see what each fault costs real traffic. Failing readiness and the bad deploy cost nothing. A crash usually costs a handful of requests, the ones sent to the dead pod before Kubernetes notices it has gone.
+A load generator sends 10 requests a second at the app the whole time, so you can see what each fault costs real traffic. The page shows the failed requests for each incident, counted from Prometheus. Failing readiness and the bad deploy cost nothing. A crash usually costs a handful of requests, the ones sent to the dead pod before Kubernetes notices it has gone. A flaky deploy costs some failed requests (about 50 in testing), because the canary serves real traffic until it is caught.
 
 ## Run it locally
 
@@ -38,7 +39,7 @@ macOS, Linux or Git Bash:
 scripts/up.sh
 ```
 
-The first run takes a few minutes. It creates a k3d cluster called `resilience-playground`, builds the five images, installs Argo Rollouts and deploys everything. When it finishes, open:
+The first run takes a few minutes. It creates a k3d cluster called `resilience-playground`, builds the images, installs Argo Rollouts and deploys everything. When it finishes, open:
 
 ```
 http://localhost:8080
@@ -61,7 +62,8 @@ Useful to know:
 1. Press **Crash a pod**. One tile turns red, its restart count goes up, and it is back within seconds.
 2. Press **Fail readiness**. The pod stays running but turns amber and shows "Out of the Service". Nothing restarts; traffic simply goes elsewhere for 45 seconds.
 3. Press **Bad deploy**. A fourth tile appears, marked *canary*, and never becomes ready. After 30 seconds Argo Rollouts gives up on it and removes it. The three original pods serve everything throughout.
-4. Watch the cost in requests while you do it:
+4. Press **Flaky deploy**. The canary looks healthy and takes a third of the traffic, but half of its requests fail. Within about half a minute the analysis sees the error rate and aborts the release. The graphs show the success rate dip and recover.
+5. Watch the cost in requests while you do it. The page shows the failed requests for each incident, and the load generator logs them too:
 
    ```bash
    kubectl --context k3d-resilience-playground -n sandbox logs deployment/loadgen -f
@@ -84,6 +86,10 @@ browser ──> Traefik ingress ──┬──> web         static React UI
 
 namespace sandbox:   target (Argo Rollout, 3 replicas)  <── loadgen (10 req/s)
 namespace platform:  controller, web
+namespace monitoring: prometheus
+
+  prometheus ──scrapes every 5s──> target, loadgen (sandbox)
+  controller ──queries──────────> prometheus (graphs, failed requests)
 ```
 
 | Component | Where | What it does |
@@ -91,7 +97,16 @@ namespace platform:  controller, web
 | `apps/target` | `sandbox` | The app that gets broken. Serves `/healthz`, `/readyz`, `/startupz` and `/api/work` on port 8080, and takes fault toggles on an internal admin port, 9090. |
 | `apps/loadgen` | `sandbox` | Calls the target Service at a steady 10 requests a second and logs successes and failures every second. |
 | `apps/controller` | `platform` | The only thing allowed to change the sandbox. Offers a fixed list of faults, enforces cooldowns, watches the cluster, follows each incident from injection to recovery, and streams it all to browsers over Server-Sent Events. |
-| `apps/web` | `platform` | The page: pod grid, fault buttons, incident timeline and event log. |
+| `apps/web` | `platform` | The page: pod grid, fault buttons, traffic graphs, incident timeline and event log. |
+| Prometheus | `monitoring` | Scrapes the target and the load generator, and answers the controller's queries. |
+
+### Observability
+
+Prometheus runs in its own `monitoring` namespace. It scrapes the target and the load generator every 5s, finding them by pod annotation, keeps 6 hours of data, and is not reachable from outside the cluster.
+
+The controller queries it for three graphs over the last ten minutes: requests per second, success rate and p95 latency. All three are measured from the load generator's side, so requests that never reached a pod still count. It also queries Prometheus for the failed-request count of each incident.
+
+The metrics are `target_http_requests_total{status}`, `target_http_request_duration_seconds`, `loadgen_requests_total{result}` and `loadgen_request_duration_seconds`.
 
 ### Incidents
 
@@ -102,7 +117,7 @@ Every fault opens an incident with four timestamps:
 - **Mitigated:** users were protected (the pod left the Service, the container was restarted, the release was aborted).
 - **Recovered:** everything is back to normal.
 
-The time from injected to recovered is shown as the recovery time. Incidents are held in memory; the last 20 are kept until the controller restarts.
+Each incident shows the time to detect and the time to mitigate as well as the recovery time (injected to recovered). The last 20 incidents are stored in SQLite on a small volume, so they survive a controller restart. An incident that is still running when the controller restarts is marked timed out.
 
 ### Controller API
 
@@ -111,6 +126,7 @@ The time from injected to recovered is shown as the recovery time. Incidents are
 | `POST /api/faults/crash-pod` | Crash one random healthy pod |
 | `POST /api/faults/fail-readiness` | Make one random healthy pod fail readiness for 45s |
 | `POST /api/faults/bad-deploy` | Release the broken image as a canary |
+| `POST /api/faults/flaky-deploy` | Release an image that fails half of its requests as a canary |
 | `GET /api/stream` | Live state and event log (Server-Sent Events) |
 | `GET /api/state` | The current state, once, as JSON |
 
@@ -120,13 +136,14 @@ A fault request answers `202` when it starts, `409` if that fault is still recov
 
 The page lets strangers break things, so what they can break is kept narrow:
 
-- **A fixed list of faults.** The API accepts three named actions and reads no other input.
+- **A fixed list of faults.** The API accepts four named actions and reads no other input.
 - **RBAC limited to one namespace.** The controller's ServiceAccount has a `Role` in `sandbox` only: read pods, events, endpoint slices and Rollouts, and patch the one Rollout named `target`. It has no rights anywhere else in the cluster.
-- **Network policies.** Sandbox pods are denied all traffic by default. The target's admin port accepts connections from the controller only, and the load generator can reach nothing but the target.
+- **Network policies.** Sandbox pods are denied all traffic by default. The target's admin port accepts connections from the controller only, and the load generator can reach nothing but the target. Only Prometheus may reach the metrics ports (NetworkPolicy `metrics-scrape`).
+- **Prometheus is read-only in one namespace.** It may only list pods in `sandbox`, through a `Role` rather than a `ClusterRole`.
 - **Resource quota.** The sandbox namespace is capped on pods, CPU and memory.
 - **Never fewer than two serving pods.** Pod faults are refused if they would leave fewer than two pods taking traffic.
 - **Nothing internal is exposed.** The ingress routes to the UI and the controller API only.
-- **The Rollout is never left broken.** After a bad deploy the controller sets the image back, including when the controller itself was restarted in the middle of one.
+- **The Rollout is never left broken.** After a bad or flaky deploy the controller sets the image back, including when the controller itself was restarted in the middle of one.
 
 ## Development
 
@@ -157,7 +174,8 @@ apps/
   web/           React UI
 k8s/
   base/          namespaces, RBAC, quota, network policies
-  sandbox/       target Rollout and Service, loadgen
+  monitoring/    Prometheus
+  sandbox/       target Rollout and Service, loadgen, analysis template
   platform/      controller, web, ingress
 scripts/         up and down, for PowerShell and bash
 ```
@@ -167,12 +185,13 @@ scripts/         up and down, for PowerShell and bash
 - **`k3d` is not recognised:** open a new terminal after installing it, so the updated `PATH` is picked up.
 - **Port 8080 is already in use:** run the down script, then the up script with another port.
 - **A pod sits in `ImagePullBackOff`:** the images only exist locally and are copied into the cluster by the up script. Run it again.
+- **The cluster is gone after a reboot:** start Docker Desktop, then run `k3d cluster start resilience-playground` (or run the up script again).
 - **The same pod restarts more slowly each time:** Kubernetes backs off repeated restarts of one container (10s, 20s, 40s and so on). It resets after the pod has run cleanly for ten minutes.
 
 ## Roadmap
 
-1. **Local MVP on k3d** (this stage)
-2. **Observability:** Prometheus, live graphs of request rate, success rate and latency, and canary analysis based on real error rates
+1. **Local MVP on k3d** (done)
+2. **Observability:** Prometheus, live graphs of request rate, success rate and latency, and canary analysis based on real error rates (done)
 3. **Production cluster:** k3s on a VPS, provisioned with Terraform and Ansible, with TLS
 4. **Delivery:** images built in GitHub Actions, deployed by Argo CD
 5. **Hardening and extras:** per-IP rate limits, bot protection, a dependency-loss scenario with a circuit breaker
