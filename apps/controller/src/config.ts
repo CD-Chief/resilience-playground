@@ -23,6 +23,8 @@ export const config = {
   flakyImage: process.env.FLAKY_IMAGE ?? 'resilience-playground/target:v2-flaky',
   /** Empty turns off graphs and failed-request counts. */
   prometheusUrl: process.env.PROMETHEUS_URL ?? '',
+  /** SQLite file for incident history. Empty keeps history in memory only. */
+  dbPath: process.env.DB_PATH ?? '',
   unreadySeconds: intFromEnv('UNREADY_SECONDS', 45),
   /** Pod faults are refused unless this many pods would still be serving. */
   minServingPods: intFromEnv('MIN_SERVING_PODS', 2),

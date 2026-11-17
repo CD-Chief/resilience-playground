@@ -5,6 +5,7 @@ import { IncidentTracker, type ObserveResult } from './incidents.js';
 import { errorMessage, log } from './log.js';
 import { Prometheus } from './metrics.js';
 import { createApi } from './server.js';
+import { memoryStore, openStore } from './store.js';
 import type { LogEntry, MetricsView, Snapshot } from './types.js';
 
 const LOG_LIMIT = 200;
@@ -15,7 +16,9 @@ const METRICS_MS = 5000;
 // Long enough for Prometheus to scrape the last failures of an incident.
 const FAILED_COUNT_SETTLE_MS = 12000;
 
-const tracker = new IncidentTracker(config.incidentTimeoutMs);
+const store = config.dbPath ? openStore(config.dbPath) : memoryStore();
+const tracker = new IncidentTracker(config.incidentTimeoutMs, store);
+log('info', 'incident store opened', { path: config.dbPath || 'memory', loaded: tracker.list().length });
 const entries: LogEntry[] = [];
 let nextEntryId = 1;
 let broadcastTimer: NodeJS.Timeout | undefined;
@@ -187,6 +190,7 @@ setInterval(() => void refreshMetrics(), METRICS_MS);
 process.on('SIGTERM', () => {
   log('info', 'shutting down');
   api.close();
+  store.close();
   process.exit(0);
 });
 

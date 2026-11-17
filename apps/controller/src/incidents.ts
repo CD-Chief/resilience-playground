@@ -1,3 +1,4 @@
+import { memoryStore, type IncidentStore } from './store.js';
 import type { ClusterState, FaultId, Incident, IncidentStep, PodView, StepKey } from './types.js';
 
 /** Something the incident needs done to the cluster, carried out by the caller. */
@@ -36,13 +37,31 @@ const STEP_ORDER: StepKey[] = ['injected', 'detected', 'mitigated', 'recovered']
  */
 export class IncidentTracker {
   private tracked: Tracked[] = [];
+  /** Loaded from the store at startup: history only, with no context to follow. */
+  private restored: Incident[] = [];
   private nextId = 1;
 
-  constructor(private readonly timeoutMs: number) {}
+  constructor(
+    private readonly timeoutMs: number,
+    private readonly store: IncidentStore = memoryStore(),
+  ) {
+    const now = Date.now();
+    for (const incident of store.load(HISTORY_LIMIT)) {
+      // The controller restarted mid-incident and can no longer follow it.
+      if (incident.status === 'active') {
+        incident.status = 'timed-out';
+        incident.endedAt = now;
+        store.save(incident);
+      }
+      const suffix = /^inc-(\d+)$/.exec(incident.id);
+      if (suffix) this.nextId = Math.max(this.nextId, Number(suffix[1]) + 1);
+      this.restored.push(incident);
+    }
+  }
 
   /** Newest first. */
   list(): Incident[] {
-    return this.tracked.map((t) => t.incident);
+    return [...this.tracked.map((t) => t.incident), ...this.restored].slice(0, HISTORY_LIMIT);
   }
 
   isActive(fault: FaultId): boolean {
@@ -51,8 +70,10 @@ export class IncidentTracker {
 
   /** Record how many requests failed while the incident ran. */
   setFailedRequests(id: string, count: number): void {
-    const tracked = this.tracked.find((t) => t.incident.id === id);
-    if (tracked) tracked.incident.failedRequests = count;
+    const incident = this.list().find((i) => i.id === id);
+    if (!incident || incident.failedRequests === count) return;
+    incident.failedRequests = count;
+    this.persist(incident);
   }
 
   /** Pods that an active incident is already aimed at. */
@@ -77,6 +98,8 @@ export class IncidentTracker {
     };
     this.tracked.unshift({ incident, context, restoreRequested: false });
     this.tracked.length = Math.min(this.tracked.length, HISTORY_LIMIT);
+    this.restored.length = Math.min(this.restored.length, HISTORY_LIMIT - this.tracked.length);
+    this.persist(incident);
     return incident;
   }
 
@@ -85,6 +108,7 @@ export class IncidentTracker {
     const result: ObserveResult = { transitions: [], effects: [] };
     for (const t of this.tracked) {
       if (t.incident.status !== 'active') continue;
+      const before = JSON.stringify(t.incident);
       switch (t.context.fault) {
         case 'crash-pod':
           this.observeCrash(t, t.context, state, now, result);
@@ -100,6 +124,8 @@ export class IncidentTracker {
       if (t.incident.status === 'active' && now - t.incident.startedAt > this.timeoutMs) {
         this.timeOut(t, now, result);
       }
+      // Runs every second; only write when something changed.
+      if (JSON.stringify(t.incident) !== before) this.persist(t.incident);
     }
     return result;
   }
@@ -194,6 +220,11 @@ export class IncidentTracker {
     ) {
       this.mark(t, 'recovered', now, result, 'Rollout is healthy on the stable version');
     }
+  }
+
+  private persist(incident: Incident): void {
+    this.store.save(incident);
+    this.store.prune(HISTORY_LIMIT);
   }
 
   private timeOut(t: Tracked, now: number, result: ObserveResult): void {

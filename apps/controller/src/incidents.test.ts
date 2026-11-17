@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { IncidentTracker } from './incidents.js';
+import { openStore } from './store.js';
 import { BROKEN_IMAGE, STABLE_IMAGE, healthy, pod, rollout, withPod } from './testing.js';
 import type { Incident, StepKey } from './types.js';
 
@@ -151,5 +152,66 @@ describe('tracker bookkeeping', () => {
     assert.equal(list.length, 20);
     assert.equal(list[0]!.id, 'inc-25');
     assert.equal(list[19]!.id, 'inc-6');
+  });
+});
+
+describe('persistence', () => {
+  const stored = (id: string, startedAt: number, status: Incident['status'] = 'recovered'): Incident => ({
+    id,
+    fault: 'crash-pod',
+    pod: 'a',
+    status,
+    startedAt,
+    steps: [{ key: 'injected', at: startedAt }, { key: 'detected' }, { key: 'mitigated' }, { key: 'recovered' }],
+  });
+
+  it('restores an active incident as timed out and does not count it as active', () => {
+    const store = openStore(':memory:');
+    store.save(stored('inc-3', 1000, 'active'));
+    const tracker = new IncidentTracker(120_000, store);
+    const [restored] = tracker.list();
+    assert.equal(restored!.status, 'timed-out');
+    assert.ok(restored!.endedAt !== undefined);
+    assert.equal(tracker.isActive('crash-pod'), false);
+    assert.equal(tracker.targetedPods().size, 0);
+    assert.deepEqual(tracker.observe(healthy(), 5000).transitions, []);
+    assert.equal(store.load(1)[0]!.status, 'timed-out');
+  });
+
+  it('continues ids after the highest stored one', () => {
+    const store = openStore(':memory:');
+    store.save(stored('inc-7', 1000));
+    store.save(stored('inc-2', 500));
+    const tracker = new IncidentTracker(120_000, store);
+    const incident = tracker.start({ fault: 'crash-pod', pod: 'a', restarts: 0 }, 'crash', 2000);
+    assert.equal(incident.id, 'inc-8');
+  });
+
+  it('saves a recovered incident with its steps and counts, and a new tracker sees it', () => {
+    const store = openStore(':memory:');
+    const tracker = new IncidentTracker(120_000, store);
+    const incident = tracker.start({ fault: 'crash-pod', pod: 'a', restarts: 0 }, 'crash', 1000);
+    tracker.observe(withPod(healthy(), 'a', { restarts: 1 }), 4000);
+    tracker.setFailedRequests(incident.id, 9);
+
+    const second = new IncidentTracker(120_000, store);
+    const [seen] = second.list();
+    assert.equal(seen!.id, incident.id);
+    assert.equal(seen!.status, 'recovered');
+    assert.equal(seen!.recoveryMs, 3000);
+    assert.equal(seen!.failedRequests, 9);
+    assert.deepEqual(seen!.steps.map((s) => s.at), [1000, 4000, 4000, 4000]);
+  });
+
+  it('writes only when something changed', () => {
+    const saves: string[] = [];
+    const inner = openStore(':memory:');
+    const store = { ...inner, save: (i: Incident) => { saves.push(i.id); inner.save(i); } };
+    const tracker = new IncidentTracker(120_000, store);
+    tracker.start({ fault: 'crash-pod', pod: 'a', restarts: 0 }, 'crash', 0);
+    for (let t = 1000; t < 5000; t += 1000) tracker.observe(healthy(), t);
+    assert.equal(saves.length, 1);
+    tracker.observe(withPod(healthy(), 'a', { restarts: 1 }), 6000);
+    assert.equal(saves.length, 2);
   });
 });
