@@ -24,6 +24,10 @@ rules:
   - apiGroups: ["discovery.k8s.io"]
     resources: ["endpointslices"]
     verbs: ["get", "list", "watch"]
+  # Shows how a canary's analysis is going during a release.
+  - apiGroups: ["argoproj.io"]
+    resources: ["analysisruns"]
+    verbs: ["get", "list", "watch"]
   # The one write: changing the target Rollout's image for the bad-deploy
   # fault, and setting it back afterwards.
   - apiGroups: ["argoproj.io"]

@@ -38,6 +38,10 @@ spec:
               value: resilience-playground/target:v1
             - name: BROKEN_IMAGE
               value: resilience-playground/target:v2-broken
+            - name: FLAKY_IMAGE
+              value: resilience-playground/target:v2-flaky
+            - name: PROMETHEUS_URL
+              value: http://prometheus.monitoring.svc.cluster.local:9090
           readinessProbe:
             httpGet:
               path: /healthz

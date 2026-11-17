@@ -12,6 +12,9 @@ spec:
     metadata:
       labels:
         app: loadgen
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
     spec:
       automountServiceAccountToken: false
       securityContext:
@@ -24,6 +27,9 @@ spec:
         - name: loadgen
           image: resilience-playground/loadgen:v1
           imagePullPolicy: IfNotPresent
+          ports:
+            - name: metrics
+              containerPort: 9100
           env:
             - name: TARGET_URL
               value: http://target/api/work

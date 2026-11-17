@@ -1,0 +1,31 @@
+# Judges a canary by the errors it actually serves.
+#
+# Once the canary is ready and taking its share of traffic, Argo Rollouts asks
+# Prometheus every 5s what fraction of that canary's responses were 5xx. Two
+# measurements above 5% fail the run, which aborts the release and sends all
+# traffic back to the stable version.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: canary-error-rate
+  namespace: sandbox
+spec:
+  args:
+    # The canary ReplicaSet's hash, filled in by the Rollout.
+    - name: canary-hash
+  metrics:
+    - name: error-rate
+      # Give Prometheus a couple of scrapes of the new pod first.
+      initialDelay: 10s
+      interval: 5s
+      count: 3
+      failureLimit: 1
+      # No traffic measured yet is not a failure.
+      successCondition: len(result) == 0 || isNaN(result[0]) || result[0] < 0.05
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            sum(rate(target_http_requests_total{hash="{{args.canary-hash}}",status=~"5.."}[20s]))
+            /
+            sum(rate(target_http_requests_total{hash="{{args.canary-hash}}"}[20s]))

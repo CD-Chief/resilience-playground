@@ -7,8 +7,7 @@ spec:
   replicas: 3
   revisionHistoryLimit: 2
   # A release whose new pods are not ready within 30s is aborted, and the
-  # Rollout goes back to the stable version on its own. Timed pauses in the
-  # steps below do not count towards the deadline.
+  # Rollout goes back to the stable version on its own.
   progressDeadlineSeconds: 30
   progressDeadlineAbort: true
   selector:
@@ -25,12 +24,22 @@ spec:
         # is ready, so a canary that never becomes ready stops the release here
         # and receives no traffic.
         - setWeight: 33
-        - pause:
-            duration: 20s
+        # With the canary serving about a third of requests, measure its error
+        # rate for 20s. A canary that is up but failing requests is caught here.
+        - analysis:
+            templates:
+              - templateName: canary-error-rate
+            args:
+              - name: canary-hash
+                valueFrom:
+                  podTemplateHashValue: Latest
   template:
     metadata:
       labels:
         app: target
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 15
