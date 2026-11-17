@@ -4,6 +4,7 @@ import { FaultService } from './faults.js';
 import { IncidentTracker, type ObserveResult } from './incidents.js';
 import { errorMessage, log } from './log.js';
 import { Prometheus } from './metrics.js';
+import { RateLimiter } from './ratelimit.js';
 import { createApi } from './server.js';
 import { failSoft, memoryStore, openStore } from './store.js';
 import type { LogEntry, MetricsView, Snapshot } from './types.js';
@@ -49,6 +50,12 @@ const faults = new FaultService(config, tracker, () => cluster.state(), {
   setRolloutImage: (image) => cluster.setRolloutImage(image),
 });
 
+const limiter = new RateLimiter([
+  { windowMs: 60 * 1000, max: config.faultLimitPerMinute },
+  { windowMs: 60 * 60 * 1000, max: config.faultLimitPerHour },
+]);
+setInterval(() => limiter.prune(), 60 * 1000).unref();
+
 const api = createApi({
   snapshot,
   backlog: () => entries,
@@ -79,6 +86,10 @@ const api = createApi({
     return result;
   },
   onWatchersChanged: scheduleBroadcast,
+  limiter,
+  clientIpHeader: config.clientIpHeader,
+  maxStreamsPerIp: config.maxStreamsPerIp,
+  maxStreamsTotal: config.maxStreamsTotal,
 });
 
 function snapshot(): Snapshot {
