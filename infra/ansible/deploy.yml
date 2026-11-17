@@ -1,0 +1,6 @@
+---
+- name: Deploy the prod overlay
+  hosts: server
+  become: true
+  roles:
+    - deploy

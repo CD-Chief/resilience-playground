@@ -1,0 +1,65 @@
+---
+- name: Create the argo-rollouts namespace
+  ansible.builtin.command: k3s kubectl apply -f -
+  args:
+    stdin: |
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: argo-rollouts
+  register: addons_argo_namespace
+  changed_when: addons_argo_namespace.stdout_lines | select('search', ' (configured|created)$') | list | length > 0
+
+- name: Read the installed Argo Rollouts image
+  ansible.builtin.command: >-
+    k3s kubectl -n argo-rollouts get deployment argo-rollouts
+    -o jsonpath={.spec.template.spec.containers[0].image}
+  register: addons_argo_installed
+  failed_when: false
+  changed_when: false
+
+# Server-side apply always prints the same line, so the version in the running
+# image decides whether anything needs to be done.
+- name: Install Argo Rollouts {{ argo_rollouts_version }}
+  ansible.builtin.command: >-
+    k3s kubectl apply --server-side --force-conflicts -n argo-rollouts
+    -f https://github.com/argoproj/argo-rollouts/releases/download/{{ argo_rollouts_version }}/install.yaml
+  when: addons_argo_installed.rc != 0 or not addons_argo_installed.stdout.endswith(argo_rollouts_version)
+  changed_when: true
+
+- name: Install cert-manager {{ cert_manager_version }}
+  ansible.builtin.command: >-
+    k3s kubectl apply
+    -f https://github.com/cert-manager/cert-manager/releases/download/{{ cert_manager_version }}/cert-manager.yaml
+  register: addons_cert_manager_apply
+  changed_when: addons_cert_manager_apply.stdout_lines | select('search', ' (configured|created)$') | list | length > 0
+
+- name: Wait for the Argo Rollouts controller
+  ansible.builtin.command: k3s kubectl -n argo-rollouts rollout status deployment/argo-rollouts --timeout=180s
+  changed_when: false
+
+- name: Wait for the cert-manager Deployments
+  ansible.builtin.command: k3s kubectl -n cert-manager rollout status deployment/{{ item }} --timeout=180s
+  loop:
+    - cert-manager
+    - cert-manager-cainjector
+    - cert-manager-webhook
+  changed_when: false
+
+# The manifest is built here with the token base64-encoded and goes to kubectl
+# on stdin, so the token never appears in argv, a file or the task output.
+- name: Create or update the Cloudflare API token Secret
+  ansible.builtin.command: k3s kubectl apply -f -
+  args:
+    stdin: |
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: cloudflare-api-token
+        namespace: cert-manager
+      type: Opaque
+      data:
+        api-token: {{ cloudflare_api_token | b64encode }}
+  register: addons_cloudflare_secret
+  changed_when: addons_cloudflare_secret.stdout_lines | select('search', ' (configured|created)$') | list | length > 0
+  no_log: true

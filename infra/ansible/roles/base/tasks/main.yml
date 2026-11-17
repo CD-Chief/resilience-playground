@@ -1,0 +1,107 @@
+---
+- name: Update the apt cache and upgrade all packages
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: dist
+    cache_valid_time: 3600
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - unattended-upgrades
+      - fail2ban
+      - rsync
+      - curl
+      - ca-certificates
+    state: present
+
+- name: Enable unattended security upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+- name: Enable and start fail2ban
+  ansible.builtin.service:
+    name: fail2ban
+    state: started
+    enabled: true
+
+- name: Set the timezone to UTC
+  community.general.timezone:
+    name: UTC
+
+- name: Create the admin user
+  ansible.builtin.user:
+    name: "{{ admin_user }}"
+    groups: sudo
+    append: true
+    shell: /bin/bash
+    create_home: true
+
+- name: Allow the admin user passwordless sudo
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/90-deploy
+    owner: root
+    group: root
+    mode: "0440"
+    content: "{{ admin_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    validate: visudo -cf %s
+
+- name: Check for root's authorized keys
+  ansible.builtin.stat:
+    path: /root/.ssh/authorized_keys
+  register: base_root_authorized_keys
+
+- name: Create the admin user's .ssh directory
+  ansible.builtin.file:
+    path: "/home/{{ admin_user }}/.ssh"
+    state: directory
+    owner: "{{ admin_user }}"
+    group: "{{ admin_user }}"
+    mode: "0700"
+
+- name: Copy root's authorized keys to the admin user
+  ansible.builtin.copy:
+    src: /root/.ssh/authorized_keys
+    dest: "/home/{{ admin_user }}/.ssh/authorized_keys"
+    remote_src: true
+    owner: "{{ admin_user }}"
+    group: "{{ admin_user }}"
+    mode: "0600"
+  when: base_root_authorized_keys.stat.exists
+
+# Root login is switched off next, so make sure the admin user can log in first.
+# Without this, a server with no root keys would lock everyone out.
+- name: Check the admin user has authorized keys
+  ansible.builtin.stat:
+    path: "/home/{{ admin_user }}/.ssh/authorized_keys"
+  register: base_admin_authorized_keys
+
+- name: Refuse to disable root login without admin keys
+  ansible.builtin.assert:
+    that:
+      - base_admin_authorized_keys.stat.exists
+      - base_admin_authorized_keys.stat.size > 0
+    fail_msg: >-
+      /home/{{ admin_user }}/.ssh/authorized_keys is missing or empty, so disabling
+      root login would lock you out. Check the server was created with your SSH key.
+    quiet: true
+
+- name: Harden the SSH daemon
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      X11Forwarding no
+    validate: sshd -t -f %s
+  notify: Restart ssh
