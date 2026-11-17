@@ -1,0 +1,30 @@
+# Production overlay. scripts/set-image-tag.sh rewrites every tag below.
+# Lists the k8s/ subfolders directly: kustomize rejects "../.." as a cycle
+# because this overlay lives inside k8s/.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - ../../sandbox
+  - ../../platform
+  - ../../monitoring
+  - cluster-issuer.yaml
+images:
+  - name: resilience-playground/target
+    newName: ghcr.io/cd-chief/resilience-playground/target
+    newTag: v1-0000000
+  - name: resilience-playground/loadgen
+    newName: ghcr.io/cd-chief/resilience-playground/loadgen
+    newTag: "0000000"
+  - name: resilience-playground/controller
+    newName: ghcr.io/cd-chief/resilience-playground/controller
+    newTag: "0000000"
+  - name: resilience-playground/web
+    newName: ghcr.io/cd-chief/resilience-playground/web
+    newTag: "0000000"
+patches:
+  - path: controller-env.yaml
+  - path: ingress.yaml
+    target:
+      kind: Ingress
+      name: playground

@@ -1,0 +1,15 @@
+# JSON patch: a strategic merge would replace the whole rules list and drop
+# the paths.
+- op: add
+  path: /metadata/annotations
+  value:
+    cert-manager.io/cluster-issuer: letsencrypt
+- op: add
+  path: /spec/rules/0/host
+  value: lab.chiefosei.dev
+- op: add
+  path: /spec/tls
+  value:
+    - hosts:
+        - lab.chiefosei.dev
+      secretName: playground-tls
