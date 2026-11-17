@@ -138,10 +138,10 @@ Point the prod overlay at it. The script is bash, so run it from Git Bash:
 scripts/set-image-tag.sh 1a2b3c4
 ```
 
-Or from PowerShell, if `bash` is on your PATH:
+Or from PowerShell, by calling Git Bash directly. Plain `bash` in PowerShell usually starts WSL instead, which is a different environment:
 
 ```powershell
-bash scripts/set-image-tag.sh 1a2b3c4
+& "C:\Program Files\Git\bin\bash.exe" scripts/set-image-tag.sh 1a2b3c4
 ```
 
 Success: it prints `updated:` for two files under `k8s/overlays/prod` and lists the tags. Commit and push, so the repo records what is deployed:
@@ -174,7 +174,7 @@ If an image pull ever fails (pods in `ImagePullBackOff`), check that the package
 
 1. Push your change to `main` and wait for the `images` run to go green.
 2. Copy the SHA7 from the run summary.
-3. `bash scripts/set-image-tag.sh <SHA7>` (or run it in Git Bash without `bash`).
+3. `scripts/set-image-tag.sh <SHA7>` in Git Bash, or `& "C:\Program Files\Git\bin\bash.exe" scripts/set-image-tag.sh <SHA7>` in PowerShell.
 4. Commit and push the overlay change.
 5. `.\scripts\infra-ansible.ps1 deploy`
 
