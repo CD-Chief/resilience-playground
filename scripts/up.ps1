@@ -49,6 +49,7 @@ else {
 Step 'Building images'
 Run docker build -q -t resilience-playground/target:v1 --build-arg VERSION=v1 "$Root/apps/target"
 Run docker build -q -t resilience-playground/target:v2-broken --build-arg VERSION=v2-broken --build-arg BROKEN=true "$Root/apps/target"
+Run docker build -q -t resilience-playground/target:v2-flaky --build-arg VERSION=v2-flaky --build-arg ERROR_RATE=0.5 "$Root/apps/target"
 Run docker build -q -t resilience-playground/loadgen:v1 "$Root/apps/loadgen"
 Run docker build -q -t resilience-playground/controller:v1 "$Root/apps/controller"
 Run docker build -q -t resilience-playground/web:v1 "$Root/apps/web"
@@ -57,6 +58,7 @@ Step 'Importing images into the cluster'
 Run k3d image import --cluster $Cluster `
     resilience-playground/target:v1 `
     resilience-playground/target:v2-broken `
+    resilience-playground/target:v2-flaky `
     resilience-playground/loadgen:v1 `
     resilience-playground/controller:v1 `
     resilience-playground/web:v1
@@ -88,6 +90,7 @@ if ($existed) {
 Step 'Waiting for everything to be ready'
 K -n platform rollout status deployment/controller --timeout=180s
 K -n platform rollout status deployment/web --timeout=180s
+K -n monitoring rollout status deployment/prometheus --timeout=180s
 K -n sandbox rollout status deployment/loadgen --timeout=180s
 K -n sandbox wait rollout/target '--for=jsonpath={.status.phase}=Healthy' --timeout=180s
 
