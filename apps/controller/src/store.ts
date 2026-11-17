@@ -58,3 +58,26 @@ export function memoryStore(): IncidentStore {
     close: () => {},
   };
 }
+
+/**
+ * Wraps a store so a failed write is reported instead of thrown. Writes happen
+ * inside cluster-watch callbacks, where an exception would take the whole
+ * controller down; losing one history write is the lesser harm.
+ */
+export function failSoft(store: IncidentStore, onError: (err: unknown) => void): IncidentStore {
+  const guard =
+    <A extends unknown[]>(fn: (...args: A) => void) =>
+    (...args: A): void => {
+      try {
+        fn(...args);
+      } catch (err) {
+        onError(err);
+      }
+    };
+  return {
+    load: (limit) => store.load(limit),
+    save: guard(store.save),
+    prune: guard(store.prune),
+    close: guard(store.close),
+  };
+}

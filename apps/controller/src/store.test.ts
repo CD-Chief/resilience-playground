@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { memoryStore, openStore, type IncidentStore } from './store.js';
+import { failSoft, memoryStore, openStore, type IncidentStore } from './store.js';
 import type { Incident } from './types.js';
 
 function incident(id: string, startedAt: number, overrides: Partial<Incident> = {}): Incident {
@@ -64,3 +64,25 @@ for (const [name, make] of stores) {
     });
   });
 }
+
+describe('failSoft', () => {
+  it('reports a failed write instead of throwing, and passes good calls through', () => {
+    const errors: unknown[] = [];
+    const inner = memoryStore();
+    const broken: IncidentStore = {
+      ...inner,
+      save: () => {
+        throw new Error('disk full');
+      },
+    };
+    const store = failSoft(broken, (err) => errors.push(err));
+    assert.doesNotThrow(() => store.save(incident('inc-1', 1)));
+    assert.equal(errors.length, 1);
+    assert.match(String(errors[0]), /disk full/);
+
+    const healthy = failSoft(inner, (err) => errors.push(err));
+    healthy.save(incident('inc-2', 2));
+    assert.equal(healthy.load(5)[0]?.id, 'inc-2');
+    assert.equal(errors.length, 1);
+  });
+});

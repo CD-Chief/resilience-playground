@@ -5,7 +5,7 @@ import { IncidentTracker, type ObserveResult } from './incidents.js';
 import { errorMessage, log } from './log.js';
 import { Prometheus } from './metrics.js';
 import { createApi } from './server.js';
-import { memoryStore, openStore } from './store.js';
+import { failSoft, memoryStore, openStore } from './store.js';
 import type { LogEntry, MetricsView, Snapshot } from './types.js';
 
 const LOG_LIMIT = 200;
@@ -16,7 +16,12 @@ const METRICS_MS = 5000;
 // Long enough for Prometheus to scrape the last failures of an incident.
 const FAILED_COUNT_SETTLE_MS = 12000;
 
-const store = config.dbPath ? openStore(config.dbPath) : memoryStore();
+let storeFailing = false;
+const store = failSoft(config.dbPath ? openStore(config.dbPath) : memoryStore(), (err) => {
+  // Logged once per process: enough to notice, without a line every second.
+  if (!storeFailing) log('error', 'incident store write failed', { error: errorMessage(err) });
+  storeFailing = true;
+});
 const tracker = new IncidentTracker(config.incidentTimeoutMs, store);
 log('info', 'incident store opened', { path: config.dbPath || 'memory', loaded: tracker.list().length });
 const entries: LogEntry[] = [];
