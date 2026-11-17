@@ -38,7 +38,8 @@ if ($Command -eq 'tunnel') {
     Write-Host "Kubernetes API tunnel to $Ip. Leave this running and use kubectl in another terminal."
     Write-Host 'Fetch the kubeconfig once (its server stays https://127.0.0.1:6443):'
     Write-Host ''
-    Write-Host "  ssh -i `"$SshKey`" deploy@$Ip sudo cat /etc/rancher/k3s/k3s.yaml > ~/.kube/resilience-playground.yaml"
+    # Out-File with ascii: a plain '>' in Windows PowerShell 5.1 writes UTF-16, which kubectl cannot read.
+    Write-Host "  ssh -i `"$SshKey`" deploy@$Ip sudo cat /etc/rancher/k3s/k3s.yaml | Out-File -Encoding ascii `$HOME\.kube\resilience-playground.yaml"
     Write-Host ''
     & ssh -i $SshKey -N -L 6443:127.0.0.1:6443 "deploy@$Ip"
     exit $LASTEXITCODE
