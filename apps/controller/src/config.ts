@@ -25,6 +25,12 @@ export const config = {
   prometheusUrl: process.env.PROMETHEUS_URL ?? '',
   /** SQLite file for incident history. Empty keeps history in memory only. */
   dbPath: process.env.DB_PATH ?? '',
+  /** Lower-case header that carries the client address behind a proxy. Empty uses the socket address. */
+  clientIpHeader: (process.env.CLIENT_IP_HEADER ?? '').toLowerCase(),
+  faultLimitPerMinute: intFromEnv('FAULT_LIMIT_PER_MINUTE', 4),
+  faultLimitPerHour: intFromEnv('FAULT_LIMIT_PER_HOUR', 30),
+  maxStreamsPerIp: intFromEnv('MAX_STREAMS_PER_IP', 6),
+  maxStreamsTotal: intFromEnv('MAX_STREAMS_TOTAL', 1000),
   unreadySeconds: intFromEnv('UNREADY_SECONDS', 45),
   /** Pod faults are refused unless this many pods would still be serving. */
   minServingPods: intFromEnv('MIN_SERVING_PODS', 2),

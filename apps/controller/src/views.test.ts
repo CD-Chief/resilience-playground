@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { V1ContainerStatus, V1Pod } from '@kubernetes/client-node';
-import { imageTag, servingIps, toPodView, toRolloutView } from './views.js';
+import { displayVersion, imageTag, servingIps, toPodView, toRolloutView } from './views.js';
 
 function k8sPod(container: Partial<V1ContainerStatus> | undefined, ready: boolean, extra: Partial<V1Pod['metadata']> = {}): V1Pod {
   return {
@@ -94,5 +94,18 @@ describe('helpers', () => {
     const view = toRolloutView({});
     assert.equal(view.phase, 'Unknown');
     assert.equal(view.aborted, false);
+  });
+});
+
+describe('displayVersion', () => {
+  it('strips a trailing commit id', () => {
+    assert.equal(displayVersion('ghcr.io/cd-chief/resilience-playground/target:v2-broken-1a2b3c4'), 'v2-broken');
+    assert.equal(displayVersion('ghcr.io/cd-chief/resilience-playground/target:v1-abcdef0'), 'v1');
+  });
+  it('leaves local tags unchanged', () => {
+    assert.equal(displayVersion('resilience-playground/target:v1'), 'v1');
+  });
+  it('leaves uppercase suffixes unchanged', () => {
+    assert.equal(displayVersion('ghcr.io/cd-chief/resilience-playground/target:v1-ABCDEF0'), 'v1-ABCDEF0');
   });
 });
