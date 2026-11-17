@@ -3,19 +3,29 @@ import { config } from './config.js';
 import { FaultService } from './faults.js';
 import { IncidentTracker, type ObserveResult } from './incidents.js';
 import { errorMessage, log } from './log.js';
+import { Prometheus } from './metrics.js';
 import { createApi } from './server.js';
-import type { LogEntry, Snapshot } from './types.js';
+import type { LogEntry, MetricsView, Snapshot } from './types.js';
 
 const LOG_LIMIT = 200;
 const BROADCAST_DELAY_MS = 100;
 const TICK_MS = 1000;
 const RESTORE_RETRY_MS = 10000;
+const METRICS_MS = 5000;
+// Long enough for Prometheus to scrape the last failures of an incident.
+const FAILED_COUNT_SETTLE_MS = 12000;
 
 const tracker = new IncidentTracker(config.incidentTimeoutMs);
 const entries: LogEntry[] = [];
 let nextEntryId = 1;
 let broadcastTimer: NodeJS.Timeout | undefined;
 let lastRestoreAttempt = 0;
+
+const prometheus = config.prometheusUrl ? new Prometheus(config.prometheusUrl) : null;
+let metrics: MetricsView | null = null;
+let metricsFailing = false;
+/** Incident id -> the load generator's failed-request total when it began. */
+const failedBaselines = new Map<string, number>();
 
 const cluster = new Cluster(config, {
   onChange: () => {
@@ -34,9 +44,16 @@ const faults = new FaultService(config, tracker, () => cluster.state(), {
 const api = createApi({
   snapshot,
   backlog: () => entries,
+  metrics: () => metrics,
   inject: async (fault) => {
+    // Read before the fault, so everything it breaks is counted.
+    const baseline = prometheus ? await prometheus.failedTotal().catch(() => null) : null;
     const result = await faults.inject(fault, Date.now());
     if (result.ok) {
+      if (baseline !== null) {
+        failedBaselines.set(result.incident.id, baseline);
+        tracker.setFailedRequests(result.incident.id, 0);
+      }
       const detail = result.incident.steps[0]?.detail ?? fault;
       addEntry({
         ts: result.incident.startedAt,
@@ -129,14 +146,43 @@ setInterval(() => {
 
   // Safety net: the Rollout must never be left on the broken image, whether a
   // restore call failed or this process restarted in the middle of an incident.
+  const image = state.rollout?.image;
   const stranded =
-    state.rollout?.image === config.brokenImage &&
-    !tracker.isActive('bad-deploy') &&
-    !faults.views().some((f) => f.id === 'bad-deploy' && f.active);
+    (image === config.brokenImage || image === config.flakyImage) &&
+    !faults.views().some((f) => (f.id === 'bad-deploy' || f.id === 'flaky-deploy') && f.active);
   if (stranded && Date.now() - lastRestoreAttempt > RESTORE_RETRY_MS) {
-    restoreImage(config.stableImage, 'Found the Rollout on the broken image; set it back to stable');
+    restoreImage(config.stableImage, 'Found the Rollout on a faulty image; set it back to stable');
   }
 }, TICK_MS);
+
+async function refreshMetrics(): Promise<void> {
+  if (!prometheus) return;
+  try {
+    metrics = await prometheus.graphs(Date.now());
+    api.broadcast('metrics', metrics);
+
+    if (failedBaselines.size > 0) {
+      const total = await prometheus.failedTotal();
+      const now = Date.now();
+      for (const incident of tracker.list()) {
+        const baseline = failedBaselines.get(incident.id);
+        if (baseline === undefined || total === null) continue;
+        tracker.setFailedRequests(incident.id, Math.max(0, Math.round(total - baseline)));
+        if (incident.endedAt !== undefined && now - incident.endedAt > FAILED_COUNT_SETTLE_MS) {
+          failedBaselines.delete(incident.id);
+        }
+      }
+      scheduleBroadcast();
+    }
+    if (metricsFailing) log('info', 'prometheus reachable again');
+    metricsFailing = false;
+  } catch (err) {
+    // Logged once per outage, not every five seconds.
+    if (!metricsFailing) log('warn', 'prometheus query failed', { error: errorMessage(err) });
+    metricsFailing = true;
+  }
+}
+setInterval(() => void refreshMetrics(), METRICS_MS);
 
 process.on('SIGTERM', () => {
   log('info', 'shutting down');

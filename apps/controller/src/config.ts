@@ -19,6 +19,10 @@ export const config = {
   /** The image a bad deploy releases, and the one to fall back to afterwards. */
   brokenImage: process.env.BROKEN_IMAGE ?? 'resilience-playground/target:v2-broken',
   stableImage: process.env.STABLE_IMAGE ?? 'resilience-playground/target:v1',
+  /** Becomes ready, then fails a share of its requests. */
+  flakyImage: process.env.FLAKY_IMAGE ?? 'resilience-playground/target:v2-flaky',
+  /** Empty turns off graphs and failed-request counts. */
+  prometheusUrl: process.env.PROMETHEUS_URL ?? '',
   unreadySeconds: intFromEnv('UNREADY_SECONDS', 45),
   /** Pod faults are refused unless this many pods would still be serving. */
   minServingPods: intFromEnv('MIN_SERVING_PODS', 2),
@@ -27,6 +31,7 @@ export const config = {
     'crash-pod': intFromEnv('COOLDOWN_CRASH_POD_SECONDS', 30) * 1000,
     'fail-readiness': intFromEnv('COOLDOWN_FAIL_READINESS_SECONDS', 60) * 1000,
     'bad-deploy': intFromEnv('COOLDOWN_BAD_DEPLOY_SECONDS', 90) * 1000,
+    'flaky-deploy': intFromEnv('COOLDOWN_FLAKY_DEPLOY_SECONDS', 90) * 1000,
   },
 };
 

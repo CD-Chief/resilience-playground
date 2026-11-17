@@ -19,10 +19,12 @@ import { errorMessage, log } from './log.js';
 import type { ClusterState, LogEntry } from './types.js';
 import {
   eventTime,
+  latestAnalysis,
   servingIps,
   toLogEntry,
   toPodView,
   toRolloutView,
+  type AnalysisRunObject,
   type RolloutObject,
 } from './views.js';
 
@@ -45,6 +47,7 @@ export class Cluster {
   private readonly pods: Informer<V1Pod> & ObjectCache<V1Pod>;
   private readonly slices: Informer<V1EndpointSlice> & ObjectCache<V1EndpointSlice>;
   private readonly rollouts: Informer<KubernetesObject> & ObjectCache<KubernetesObject>;
+  private readonly analysisRuns: Informer<KubernetesObject> & ObjectCache<KubernetesObject>;
   private readonly events: Informer<CoreV1Event> & ObjectCache<CoreV1Event>;
   private readonly startedAt = Date.now();
   /** Event uid -> what was last reported for it. */
@@ -84,13 +87,27 @@ export class Cluster {
         >,
     );
 
+    this.analysisRuns = makeInformer(
+      this.kc,
+      `/apis/${ROLLOUTS.group}/${ROLLOUTS.version}/namespaces/${namespace}/analysisruns`,
+      () =>
+        this.custom.listNamespacedCustomObject({ ...ROLLOUTS, plural: 'analysisruns', namespace }) as Promise<
+          KubernetesListObject<KubernetesObject>
+        >,
+    );
+
     this.events = makeInformer(this.kc, `/api/v1/namespaces/${namespace}/events`, () =>
       core.listNamespacedEvent({ namespace }),
     );
   }
 
   async start(): Promise<void> {
-    const stateInformers = { pods: this.pods, endpointslices: this.slices, rollouts: this.rollouts };
+    const stateInformers = {
+      pods: this.pods,
+      endpointslices: this.slices,
+      rollouts: this.rollouts,
+      analysisruns: this.analysisRuns,
+    };
     for (const [name, informer] of Object.entries(stateInformers)) {
       for (const verb of ['add', 'update', 'delete'] as const) {
         informer.on(verb, () => this.handlers.onChange());
@@ -109,6 +126,7 @@ export class Cluster {
       this.pods.start(),
       this.slices.start(),
       this.rollouts.start(),
+      this.analysisRuns.start(),
       this.events.start(),
     ]);
   }
@@ -151,7 +169,8 @@ export class Cluster {
       .list()
       .map((pod) => toPodView(pod, rollout?.stableHash ?? '', serving))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.name.localeCompare(b.name));
-    return { pods, rollout };
+    const analysis = latestAnalysis(this.analysisRuns.list() as AnalysisRunObject[]);
+    return { pods, rollout, analysis };
   }
 
   /** Call a fault toggle on one target pod's admin port. */

@@ -78,15 +78,15 @@ describe('bad-deploy incident', () => {
     const tracker = new IncidentTracker(120_000);
     const incident = tracker.start(context, 'bad deploy', 0);
 
-    const starting = { pods: [...healthy().pods, { ...canary, state: 'starting' as const }], rollout: releasing };
+    const starting = { pods: [...healthy().pods, { ...canary, state: 'starting' as const }], rollout: releasing, analysis: null };
     assert.deepEqual(tracker.observe(starting, 1000).transitions, []);
 
-    const failing = { pods: [...healthy().pods, canary], rollout: releasing };
+    const failing = { pods: [...healthy().pods, canary], rollout: releasing, analysis: null };
     const detected = tracker.observe(failing, 4000);
     assert.deepEqual(detected.transitions.map((t) => t.step), ['detected']);
     assert.deepEqual(detected.effects, []);
 
-    const abortedState = { pods: [...healthy().pods, { ...canary, state: 'terminating' as const }], rollout: aborted };
+    const abortedState = { pods: [...healthy().pods, { ...canary, state: 'terminating' as const }], rollout: aborted, analysis: null };
     const mitigated = tracker.observe(abortedState, 30_000);
     assert.deepEqual(mitigated.transitions.map((t) => t.step), ['mitigated']);
     assert.deepEqual(mitigated.effects, [{ type: 'restore-image', image: STABLE_IMAGE }]);
@@ -111,7 +111,7 @@ describe('bad-deploy incident', () => {
   it('restores the image if the incident times out first', () => {
     const tracker = new IncidentTracker(60_000);
     const incident = tracker.start(context, 'bad deploy', 0);
-    const stuck = { pods: [...healthy().pods, canary], rollout: releasing };
+    const stuck = { pods: [...healthy().pods, canary], rollout: releasing, analysis: null };
     tracker.observe(stuck, 5000);
     const result = tracker.observe(stuck, 61_000);
     assert.deepEqual(result.transitions.map((t) => t.step), ['timed-out']);

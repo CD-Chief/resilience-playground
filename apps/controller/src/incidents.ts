@@ -17,7 +17,7 @@ export interface ObserveResult {
 export type StartContext =
   | { fault: 'crash-pod'; pod: string; restarts: number }
   | { fault: 'fail-readiness'; pod: string; seconds: number }
-  | { fault: 'bad-deploy'; brokenImage: string; restoreImage: string };
+  | { fault: 'bad-deploy' | 'flaky-deploy'; brokenImage: string; restoreImage: string };
 
 interface Tracked {
   incident: Incident;
@@ -47,6 +47,12 @@ export class IncidentTracker {
 
   isActive(fault: FaultId): boolean {
     return this.tracked.some((t) => t.incident.fault === fault && t.incident.status === 'active');
+  }
+
+  /** Record how many requests failed while the incident ran. */
+  setFailedRequests(id: string, count: number): void {
+    const tracked = this.tracked.find((t) => t.incident.id === id);
+    if (tracked) tracked.incident.failedRequests = count;
   }
 
   /** Pods that an active incident is already aimed at. */
@@ -87,7 +93,8 @@ export class IncidentTracker {
           this.observeUnready(t, t.context, state, now, result);
           break;
         case 'bad-deploy':
-          this.observeBadDeploy(t, t.context, state, now, result);
+        case 'flaky-deploy':
+          this.observeDeploy(t, t.context, state, now, result);
           break;
       }
       if (t.incident.status === 'active' && now - t.incident.startedAt > this.timeoutMs) {
@@ -140,9 +147,10 @@ export class IncidentTracker {
     }
   }
 
-  private observeBadDeploy(
+  /** Both deploy faults: a canary of a bad image, aborted by Argo Rollouts. */
+  private observeDeploy(
     t: Tracked,
-    context: Extract<StartContext, { fault: 'bad-deploy' }>,
+    context: Extract<StartContext, { fault: 'bad-deploy' | 'flaky-deploy' }>,
     state: ClusterState,
     now: number,
     result: ObserveResult,
@@ -150,13 +158,29 @@ export class IncidentTracker {
     const rollout = state.rollout;
     if (!rollout) return;
     const canaries = state.pods.filter((p) => p.image === context.brokenImage && p.state !== 'terminating');
+    const flaky = context.fault === 'flaky-deploy';
 
-    if (canaries.some((p) => p.state === 'not-ready')) {
+    if (flaky) {
+      // Only an analysis run started by this release counts.
+      const analysis = state.analysis;
+      if (analysis && analysis.startedAt >= t.incident.startedAt - 1000 && analysis.failed > 0) {
+        this.mark(t, 'detected', now, result, 'Canary analysis measured an error rate above 5% on the canary');
+      }
+    } else if (canaries.some((p) => p.state === 'not-ready')) {
       this.mark(t, 'detected', now, result, 'Canary pod started but fails its readiness probe, so it receives no traffic');
     }
+
     if (rollout.aborted && rollout.image === context.brokenImage) {
-      this.mark(t, 'detected', now, result, 'Canary never became ready');
-      this.mark(t, 'mitigated', now, result, 'Progress deadline passed; Argo Rollouts aborted the release and removed the canary');
+      this.mark(t, 'detected', now, result, flaky ? 'Canary was serving errors' : 'Canary never became ready');
+      this.mark(
+        t,
+        'mitigated',
+        now,
+        result,
+        flaky
+          ? 'Analysis failed; Argo Rollouts aborted the release and sent all traffic back to the stable version'
+          : 'Progress deadline passed; Argo Rollouts aborted the release and removed the canary',
+      );
       if (!t.restoreRequested) {
         t.restoreRequested = true;
         result.effects.push({ type: 'restore-image', image: context.restoreImage });
@@ -178,7 +202,7 @@ export class IncidentTracker {
     const detail = `No full recovery within ${Math.round(this.timeoutMs / 1000)}s`;
     result.transitions.push({ incident: t.incident, step: 'timed-out', detail });
     // Never leave the Rollout pointing at the broken image.
-    if (t.context.fault === 'bad-deploy' && !t.restoreRequested) {
+    if ('restoreImage' in t.context && !t.restoreRequested) {
       t.restoreRequested = true;
       result.effects.push({ type: 'restore-image', image: t.context.restoreImage });
     }

@@ -27,8 +27,13 @@ const COPY: Record<FaultId, { label: string; description: string; heals: string 
   },
   'bad-deploy': {
     label: 'Bad deploy',
-    description: 'Releases a broken version of the app as a canary.',
+    description: 'Releases a version that never becomes ready, as a canary.',
     heals: 'Argo Rollouts aborts the release when the canary fails to become ready.',
+  },
+  'flaky-deploy': {
+    label: 'Flaky deploy',
+    description: 'Releases a version that starts fine but fails half of its requests.',
+    heals: 'Canary analysis measures the error rate in Prometheus and aborts the release.',
   },
 };
 
@@ -41,6 +46,7 @@ export class FaultService {
     'crash-pod': 0,
     'fail-readiness': 0,
     'bad-deploy': 0,
+    'flaky-deploy': 0,
   };
   private readonly inFlight = new Set<FaultId>();
 
@@ -79,7 +85,8 @@ export class FaultService {
     // cannot both get through.
     this.inFlight.add(id);
     try {
-      const result = id === 'bad-deploy' ? await this.badDeploy(now) : await this.podFault(id, now);
+      const result =
+        id === 'bad-deploy' || id === 'flaky-deploy' ? await this.deploy(id, now) : await this.podFault(id, now);
       if (result.ok) this.availableAt[id] = now + this.config.cooldownMs[id];
       return result;
     } catch (err) {
@@ -130,9 +137,12 @@ export class FaultService {
     return { ok: true, incident };
   }
 
-  private async badDeploy(now: number): Promise<InjectResult> {
+  private async deploy(id: 'bad-deploy' | 'flaky-deploy', now: number): Promise<InjectResult> {
+    const image = id === 'bad-deploy' ? this.config.brokenImage : this.config.flakyImage;
+    const faulty = [this.config.brokenImage, this.config.flakyImage];
     const rollout = this.getState().rollout;
-    if (!rollout || rollout.phase !== 'Healthy' || rollout.image === this.config.brokenImage) {
+    // A healthy Rollout on a good image: this also keeps the two deploy faults apart.
+    if (!rollout || rollout.phase !== 'Healthy' || faulty.includes(rollout.image)) {
       return {
         ok: false,
         status: 409,
@@ -140,10 +150,10 @@ export class FaultService {
       };
     }
 
-    await this.actions.setRolloutImage(this.config.brokenImage);
+    await this.actions.setRolloutImage(image);
     const incident = this.tracker.start(
-      { fault: 'bad-deploy', brokenImage: this.config.brokenImage, restoreImage: rollout.image },
-      `Released the broken image ${this.config.brokenImage} as a canary`,
+      { fault: id, brokenImage: image, restoreImage: rollout.image },
+      `Released ${image} as a canary`,
       now,
     );
     return { ok: true, incident };

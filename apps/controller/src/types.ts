@@ -30,12 +30,22 @@ export interface RolloutView {
   stepCount: number;
 }
 
+/** The most recent canary analysis run. */
+export interface AnalysisView {
+  name: string;
+  phase: string;
+  startedAt: number;
+  successful: number;
+  failed: number;
+}
+
 export interface ClusterState {
   pods: PodView[];
   rollout: RolloutView | null;
+  analysis: AnalysisView | null;
 }
 
-export const FAULT_IDS = ['crash-pod', 'fail-readiness', 'bad-deploy'] as const;
+export const FAULT_IDS = ['crash-pod', 'fail-readiness', 'bad-deploy', 'flaky-deploy'] as const;
 export type FaultId = (typeof FAULT_IDS)[number];
 
 export function isFaultId(value: string): value is FaultId {
@@ -61,6 +71,8 @@ export interface Incident {
   endedAt?: number;
   /** Injected to recovered, in milliseconds. */
   recoveryMs?: number;
+  /** Requests the load generator saw fail during the incident. Absent without Prometheus. */
+  failedRequests?: number;
   steps: IncidentStep[];
 }
 
@@ -83,6 +95,14 @@ export interface LogEntry {
   reason: string;
   object?: string;
   message: string;
+}
+
+/** Ten minutes of traffic as the load generator saw it. A null value is a gap. */
+export interface MetricsView {
+  timestamps: number[];
+  rps: (number | null)[];
+  successRate: (number | null)[];
+  p95Ms: (number | null)[];
 }
 
 export interface Snapshot {

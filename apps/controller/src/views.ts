@@ -1,5 +1,5 @@
 import type { CoreV1Event, V1EndpointSlice, V1Pod } from '@kubernetes/client-node';
-import type { LogEntry, PodState, PodView, RolloutView } from './types.js';
+import type { AnalysisView, LogEntry, PodState, PodView, RolloutView } from './types.js';
 
 /** The fields of an Argo Rollout that the controller reads. */
 export interface RolloutObject {
@@ -89,6 +89,33 @@ export function toRolloutView(rollout: RolloutObject): RolloutView {
     step: status.currentStepIndex ?? 0,
     stepCount: rollout.spec?.strategy?.canary?.steps?.length ?? 0,
   };
+}
+
+/** The fields of an Argo AnalysisRun that the controller reads. */
+export interface AnalysisRunObject {
+  metadata?: { name?: string; creationTimestamp?: Date | string };
+  status?: {
+    phase?: string;
+    metricResults?: { successful?: number; failed?: number }[];
+  };
+}
+
+/** The newest run, or null when there has never been one. */
+export function latestAnalysis(runs: readonly AnalysisRunObject[]): AnalysisView | null {
+  let latest: AnalysisView | null = null;
+  for (const run of runs) {
+    const startedAt = new Date(run.metadata?.creationTimestamp ?? 0).getTime();
+    if (latest && startedAt <= latest.startedAt) continue;
+    const results = run.status?.metricResults ?? [];
+    latest = {
+      name: run.metadata?.name ?? '',
+      phase: run.status?.phase ?? 'Pending',
+      startedAt,
+      successful: results.reduce((sum, r) => sum + (r.successful ?? 0), 0),
+      failed: results.reduce((sum, r) => sum + (r.failed ?? 0), 0),
+    };
+  }
+  return latest;
 }
 
 export function eventTime(event: CoreV1Event): number {

@@ -1,10 +1,12 @@
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import type { InjectResult } from './faults.js';
-import { isFaultId, type FaultId, type LogEntry, type Snapshot } from './types.js';
+import { isFaultId, type FaultId, type LogEntry, type MetricsView, type Snapshot } from './types.js';
 
 export interface ServerDeps {
   snapshot: () => Snapshot;
   backlog: () => LogEntry[];
+  /** The latest graphs, or null while there are none. */
+  metrics: () => MetricsView | null;
   inject: (fault: FaultId) => Promise<InjectResult>;
   /** Called when a browser connects to or leaves the stream. */
   onWatchersChanged: () => void;
@@ -13,7 +15,7 @@ export interface ServerDeps {
 export interface Api {
   server: Server;
   watchers: () => number;
-  broadcast: (event: 'state' | 'log', data: unknown) => void;
+  broadcast: (event: 'state' | 'log' | 'metrics', data: unknown) => void;
   close: () => void;
 }
 
@@ -63,6 +65,8 @@ export function createApi(deps: ServerDeps): Api {
       res.write('retry: 2000\n\n');
       res.write(frame('backlog', deps.backlog()));
       res.write(frame('state', deps.snapshot()));
+      const metrics = deps.metrics();
+      if (metrics) res.write(frame('metrics', metrics));
       deps.onWatchersChanged();
       res.on('close', () => {
         clients.delete(res);
