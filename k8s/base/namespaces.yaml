@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform
+---
+# The only namespace visitors can affect.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sandbox

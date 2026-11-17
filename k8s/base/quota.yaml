@@ -1,0 +1,18 @@
+# Caps what the sandbox can consume, whatever happens inside it.
+# Steady state is 3 target pods + 1 loadgen; a canary adds 1 more.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: sandbox-quota
+  namespace: sandbox
+spec:
+  hard:
+    pods: "10"
+    requests.cpu: "1"
+    requests.memory: 1Gi
+    limits.cpu: "2"
+    limits.memory: 2Gi
+    services: "5"
+    services.loadbalancers: "0"
+    services.nodeports: "0"
+    persistentvolumeclaims: "0"

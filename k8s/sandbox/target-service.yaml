@@ -1,0 +1,14 @@
+# What the load generator calls. Selects every ready target pod, stable and
+# canary alike, so one canary among three pods receives about a third of traffic.
+apiVersion: v1
+kind: Service
+metadata:
+  name: target
+  namespace: sandbox
+spec:
+  selector:
+    app: target
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

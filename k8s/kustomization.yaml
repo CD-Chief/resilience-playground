@@ -1,0 +1,7 @@
+# Everything except Argo Rollouts itself, which is installed first from its
+# upstream release manifest.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - base
+  - sandbox
