@@ -1,0 +1,52 @@
+---
+- name: Create the k3s config directory
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write the k3s config
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      write-kubeconfig-mode: "0600"
+      secrets-encryption: true
+  notify: Restart k3s
+
+- name: Read the installed k3s version
+  ansible.builtin.command: /usr/local/bin/k3s --version
+  register: k3s_installed
+  failed_when: false
+  changed_when: false
+
+- name: Download the k3s install script
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: /usr/local/share/k3s-install.sh
+    owner: root
+    group: root
+    mode: "0700"
+  when: k3s_installed.rc != 0 or k3s_version not in k3s_installed.stdout
+
+- name: Install k3s {{ k3s_version }}
+  ansible.builtin.command: /usr/local/share/k3s-install.sh
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+  when: k3s_installed.rc != 0 or k3s_version not in k3s_installed.stdout
+  changed_when: true
+
+- name: Apply pending k3s restarts
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for the node to be Ready
+  ansible.builtin.command: k3s kubectl wait --for=condition=Ready node --all --timeout=180s
+  register: k3s_node_ready
+  until: k3s_node_ready.rc == 0
+  retries: 20
+  delay: 6
+  changed_when: false
