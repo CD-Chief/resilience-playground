@@ -55,6 +55,34 @@ spec:
         - protocol: TCP
           port: 8080
 ---
+# Prometheus collects metrics from the target and the load generator.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: metrics-scrape
+  namespace: sandbox
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [target, loadgen]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9100
+---
 # The admin port takes fault toggles. Only the controller may reach it.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

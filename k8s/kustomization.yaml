@@ -6,3 +6,4 @@ resources:
   - base
   - sandbox
   - platform
+  - monitoring
