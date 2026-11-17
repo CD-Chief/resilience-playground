@@ -1,0 +1,20 @@
+{
+  "name": "@resilience-playground/target",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "dev": "tsc -p tsconfig.build.json && node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc && node --test \"dist/**/*.test.js\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}
