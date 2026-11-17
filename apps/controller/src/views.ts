@@ -41,6 +41,11 @@ export function imageTag(image: string): string {
   return colon === -1 ? 'latest' : name.slice(colon + 1);
 }
 
+/** The tag without a trailing "-" and 7 lowercase hex characters (the build's commit id). */
+export function displayVersion(image: string): string {
+  return imageTag(image).replace(/-[0-9a-f]{7}$/, '');
+}
+
 export function toPodView(pod: V1Pod, stableHash: string, servingIps: Set<string>): PodView {
   const deleting = Boolean(pod.metadata?.deletionTimestamp);
   const ready =
@@ -56,7 +61,7 @@ export function toPodView(pod: V1Pod, stableHash: string, servingIps: Set<string
     inService: ip !== undefined && servingIps.has(ip),
     restarts: pod.status?.containerStatuses?.[0]?.restartCount ?? 0,
     image,
-    version: imageTag(image),
+    version: displayVersion(image),
     hash,
     role: stableHash === '' || hash === stableHash ? 'stable' : 'canary',
     createdAt: new Date(pod.metadata?.creationTimestamp ?? 0).toISOString(),
