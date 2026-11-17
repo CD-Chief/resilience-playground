@@ -1,0 +1,7 @@
+---
+admin_user: deploy
+k3s_version: v1.37.2+k3s1
+argo_rollouts_version: v1.10.2
+cert_manager_version: v1.21.3
+repo_k8s_dir: /opt/resilience-playground/k8s
+public_url: https://lab.chiefosei.dev

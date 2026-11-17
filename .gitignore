@@ -22,3 +22,6 @@ kubeconfig*
 
 # planning notes, kept local
 .plan/
+
+# ansible host keys
+infra/ansible/.known_hosts
