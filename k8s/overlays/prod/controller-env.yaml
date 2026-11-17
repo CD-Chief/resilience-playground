@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller
+  namespace: platform
+spec:
+  template:
+    spec:
+      containers:
+        - name: controller
+          env:
+            - name: STABLE_IMAGE
+              value: ghcr.io/cd-chief/resilience-playground/target:v1-0000000
+            - name: BROKEN_IMAGE
+              value: ghcr.io/cd-chief/resilience-playground/target:v2-broken-0000000
+            - name: FLAKY_IMAGE
+              value: ghcr.io/cd-chief/resilience-playground/target:v2-flaky-0000000
+            - name: CLIENT_IP_HEADER
+              value: cf-connecting-ip
