@@ -106,6 +106,7 @@ h1 {
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   grid-template-areas:
     'pods incident'
+    'graphs incident'
     'faults incident'
     'log log';
   align-items: start;
@@ -117,6 +118,10 @@ h1 {
 
 .area-faults {
   grid-area: faults;
+}
+
+.area-graphs {
+  grid-area: graphs;
 }
 
 .area-incident {
@@ -521,6 +526,140 @@ h2 {
   color: var(--red);
 }
 
+.measures {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.measures dt {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.measures dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.measure-bad {
+  color: var(--red);
+}
+
+.history-failed {
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Graphs */
+
+.charts {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.chart {
+  margin: 0;
+  min-width: 0;
+}
+
+.chart figcaption {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chart-title {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.chart-value {
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: pan-y;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.chart-axis {
+  stroke: var(--grey);
+  stroke-width: 1;
+}
+
+.chart-tick {
+  fill: var(--muted);
+  font-family: var(--sans);
+  font-size: 9.5px;
+}
+
+.chart-incident {
+  fill: var(--amber);
+  opacity: 0.16;
+}
+
+.chart-crosshair {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+.chart-dot {
+  fill: var(--blue);
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+
+.chart-hit {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.chart-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chart-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  border-radius: 2px;
+  background: var(--amber);
+  opacity: 0.45;
+  vertical-align: -1px;
+}
+
 /* Event log */
 
 .log {
@@ -593,6 +732,7 @@ h2 {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       'pods'
+      'graphs'
       'faults'
       'incident'
       'log';

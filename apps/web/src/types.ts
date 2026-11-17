@@ -24,7 +24,7 @@ export interface RolloutView {
   stepCount: number;
 }
 
-export type FaultId = 'crash-pod' | 'fail-readiness' | 'bad-deploy';
+export type FaultId = 'crash-pod' | 'fail-readiness' | 'bad-deploy' | 'flaky-deploy';
 export type StepKey = 'injected' | 'detected' | 'mitigated' | 'recovered';
 
 export interface IncidentStep {
@@ -41,6 +41,7 @@ export interface Incident {
   startedAt: number;
   endedAt?: number;
   recoveryMs?: number;
+  failedRequests?: number;
   steps: IncidentStep[];
 }
 
@@ -62,6 +63,13 @@ export interface LogEntry {
   reason: string;
   object?: string;
   message: string;
+}
+
+export interface MetricsView {
+  timestamps: number[];
+  rps: (number | null)[];
+  successRate: (number | null)[];
+  p95Ms: (number | null)[];
 }
 
 export interface Snapshot {

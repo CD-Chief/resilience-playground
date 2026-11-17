@@ -1,11 +1,12 @@
 import { EventLog } from './components/EventLog';
 import { FaultButtons } from './components/FaultButtons';
+import { Graphs } from './components/Graphs';
 import { IncidentPanel } from './components/IncidentPanel';
 import { PodGrid } from './components/PodGrid';
 import { useServerNow, useStream } from './useStream';
 
 export function App() {
-  const { snapshot, log, connected, clockOffset } = useStream();
+  const { snapshot, log, metrics, connected, clockOffset } = useStream();
   const now = useServerNow(clockOffset);
 
   const rollout = snapshot?.rollout ?? null;
@@ -52,6 +53,14 @@ export function App() {
               </span>
             </h2>
             <PodGrid pods={snapshot.pods} targeted={targeted} />
+          </section>
+
+          <section className="panel area-graphs">
+            <h2>
+              Traffic
+              <span className="count">last 10 minutes, as the load generator saw it</span>
+            </h2>
+            <Graphs metrics={metrics} incidents={snapshot.incidents} />
           </section>
 
           <section className="panel area-faults">

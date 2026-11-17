@@ -4,6 +4,7 @@ const FAULT_LABEL: Record<FaultId, string> = {
   'crash-pod': 'Pod crash',
   'fail-readiness': 'Readiness failure',
   'bad-deploy': 'Bad deploy',
+  'flaky-deploy': 'Flaky deploy',
 };
 
 const STEP_LABEL: Record<StepKey, string> = {
@@ -17,6 +18,12 @@ const seconds = (ms: number) => `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
 
 function shortPod(name: string | undefined): string {
   return name ? name.slice(name.lastIndexOf('-') + 1) : '';
+}
+
+/** Time from injection to a step, or a dash while it has not happened. */
+function since(incident: Incident, key: StepKey): string {
+  const at = incident.steps.find((s) => s.key === key)?.at;
+  return at === undefined ? '–' : seconds(at - incident.startedAt);
 }
 
 function Timeline({ incident, now }: { incident: Incident; now: number }) {
@@ -37,6 +44,20 @@ function Timeline({ incident, now }: { incident: Incident; now: number }) {
           </span>
         </div>
       </header>
+      <dl className="measures">
+        <div>
+          <dt>Time to detect</dt>
+          <dd>{since(incident, 'detected')}</dd>
+        </div>
+        <div>
+          <dt>Time to mitigate</dt>
+          <dd>{since(incident, 'mitigated')}</dd>
+        </div>
+        <div>
+          <dt>Failed requests</dt>
+          <dd className={incident.failedRequests ? 'measure-bad' : undefined}>{incident.failedRequests ?? '–'}</dd>
+        </div>
+      </dl>
       <ol className="steps">
         {incident.steps.map((step) => {
           const done = step.at !== undefined;
@@ -81,6 +102,9 @@ export function IncidentPanel({ incidents, now }: { incidents: Incident[]; now: 
               <tr key={incident.id}>
                 <td>{FAULT_LABEL[incident.fault]}</td>
                 <td className="muted">{shortPod(incident.pod)}</td>
+                <td className="history-failed">
+                  {incident.failedRequests === undefined ? '' : `${incident.failedRequests} failed`}
+                </td>
                 <td className={`history-result history-${incident.status}`}>
                   {incident.recoveryMs !== undefined ? `recovered in ${seconds(incident.recoveryMs)}` : 'timed out'}
                 </td>

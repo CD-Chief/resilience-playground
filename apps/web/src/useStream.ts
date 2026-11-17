@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import type { LogEntry, Snapshot } from './types';
+import type { LogEntry, MetricsView, Snapshot } from './types';
 
 const LOG_LIMIT = 200;
 
 export interface Stream {
   snapshot: Snapshot | null;
   log: LogEntry[];
+  metrics: MetricsView | null;
   connected: boolean;
   /** Add to Date.now() to get the server's clock. */
   clockOffset: number;
@@ -15,6 +16,7 @@ export interface Stream {
 export function useStream(): Stream {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
+  const [metrics, setMetrics] = useState<MetricsView | null>(null);
   const [connected, setConnected] = useState(false);
   const [clockOffset, setClockOffset] = useState(0);
 
@@ -28,6 +30,9 @@ export function useStream(): Stream {
       setSnapshot(next);
       setClockOffset(next.now - Date.now());
     });
+    source.addEventListener('metrics', (event) => {
+      setMetrics(JSON.parse((event as MessageEvent<string>).data) as MetricsView);
+    });
     // Sent once per connection, so it replaces whatever was shown before.
     source.addEventListener('backlog', (event) => {
       setLog(JSON.parse((event as MessageEvent<string>).data) as LogEntry[]);
@@ -40,7 +45,7 @@ export function useStream(): Stream {
     return () => source.close();
   }, []);
 
-  return { snapshot, log, connected, clockOffset };
+  return { snapshot, log, metrics, connected, clockOffset };
 }
 
 /** The server's current time, refreshed several times a second for countdowns. */
