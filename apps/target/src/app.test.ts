@@ -37,6 +37,7 @@ async function start(overrides: Partial<Config> = {}): Promise<Running> {
     podName: 'pod-a',
     broken: false,
     startupDelayMs: 0,
+    errorRate: 0,
     exit: (code) => exits.push(code),
     ...overrides,
   });
@@ -180,6 +181,38 @@ describe('startup and shutdown', () => {
       t.app.beginShutdown();
       assert.equal((await fetch(`${t.mainUrl}/readyz`)).status, 503);
       assert.equal((await fetch(`${t.mainUrl}/api/work`)).status, 200);
+    } finally {
+      await t.stop();
+    }
+  });
+});
+
+describe('metrics and injected errors', () => {
+  it('counts work requests by status and exposes them at /metrics', async () => {
+    // random() alternates below and above the 0.5 error rate: fail, pass, fail, pass.
+    let n = 0;
+    const t = await start({ errorRate: 0.5, random: () => (n++ % 2 === 0 ? 0.1 : 0.9) });
+    try {
+      const statuses: number[] = [];
+      for (let i = 0; i < 4; i++) statuses.push((await fetch(`${t.mainUrl}/api/work`)).status);
+      assert.deepEqual(statuses, [500, 200, 500, 200]);
+
+      const res = await fetch(`${t.mainUrl}/metrics`);
+      assert.equal(res.status, 200);
+      const text = await res.text();
+      assert.match(text, /target_http_requests_total\{status="200"\} 2/);
+      assert.match(text, /target_http_requests_total\{status="500"\} 2/);
+      assert.match(text, /target_http_request_duration_seconds_count 4/);
+    } finally {
+      await t.stop();
+    }
+  });
+
+  it('stays ready while serving errors', async () => {
+    const t = await start({ errorRate: 1 });
+    try {
+      assert.equal((await fetch(`${t.mainUrl}/api/work`)).status, 500);
+      assert.equal((await fetch(`${t.mainUrl}/readyz`)).status, 200);
     } finally {
       await t.stop();
     }

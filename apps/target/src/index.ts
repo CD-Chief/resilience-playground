@@ -17,11 +17,16 @@ const adminPort = intFromEnv('ADMIN_PORT', 9090);
 // Service stops routing here before in-flight requests are cut off.
 const shutdownDelayMs = intFromEnv('SHUTDOWN_DELAY_MS', 3000);
 const broken = process.env.BROKEN === 'true';
+const errorRate = Number(process.env.ERROR_RATE ?? '0');
+if (!(errorRate >= 0 && errorRate <= 1)) {
+  throw new Error(`ERROR_RATE must be a number from 0 to 1, got "${process.env.ERROR_RATE}"`);
+}
 
 const app = createApp({
   version: process.env.VERSION ?? 'dev',
   podName: process.env.POD_NAME ?? process.env.HOSTNAME ?? 'local',
   broken,
+  errorRate,
   startupDelayMs: intFromEnv('STARTUP_DELAY_MS', 2000),
   exit: (code) => process.exit(code),
 });
@@ -30,6 +35,7 @@ app.main.listen(port, () => log('info', 'listening', { server: 'main', port }));
 app.admin.listen(adminPort, () => log('info', 'listening', { server: 'admin', port: adminPort }));
 
 if (broken) log('warn', 'BROKEN=true: readiness will never pass');
+if (errorRate > 0) log('warn', 'ERROR_RATE set: some /api/work requests will fail', { errorRate });
 
 let stopping = false;
 function shutdown(signal: string): void {
